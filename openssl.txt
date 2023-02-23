@@ -1,0 +1,218 @@
+证书结构X509
+  |----tbs 待签名证书,证书主体(版本 、序列号、公钥) 使用openssl asn1parse 提取tbs，并使用签名算法进行摘要计算
+  |----签名算法
+  |----签名值  使用CA公钥进行解密,然后使用，然后使用openssl asn1parse进行解析 取出签名值
+  
+  
+指纹指的是证书的指纹
+grep -v ^- fuchuang.crt|base64 -d|openssl dgst -sha256
+
+
+下载证书
+echo|openssl s_client -connect erp.fuchuang.com:443 2>/dev/null|openssl x509 > fuchuang.crt
+下载证书链
+echo|openssl s_client -connect erp.fuchuang.com:443 -showcerts 2>/dev/null|sed -ne '/-BEGIN/,/-END/p' > fuchuang.chain.crt
+
+提取CA证书中的公钥
+openssl x509 -in TrustAsiaTLSRSACA.crt -nooout -pubkey > TrustAsiaTLSRSACA.pub
+
+
+
+从证书中提取签名,并转化为二进制
+openssl x509 -in fuchuang.crt -noout -text  -certopt ca_default -certopt no_validity -certopt no_serial -certopt no_subject -certopt no_extensions -certopt no_signame| grep -v 'Signature Algorithm' | tr -d '[:space:]:'|xxd -r -p
+
+使用CA证书的公钥对二进制进行解密
+openssl rsautl -inkey CNCA.pub -pubin -in fuchuangsign.bin
+
+查看解密后的结构信息
+openssl asn1parse -inform DER -in TrustAsiaTLSRSACA.dec.bin   
+                                                              
+
+
+openssl asn1parse -in TrustAsiaTLSRSACA.crt -strparse 4 -out TrustAsiaTLSRSACA-body.bin
+
+ 
+e3818187 452c7a8dd1d60446d29d1b1708555abf7787c5cfd066bc6cd62ba1ec
+
+F2811FB11FC242B49EDD1FFE2F2DCFC2B420B5E50F2151BAEC0004D7E8122DF3
+
+f2811fb11fc242b49edd1ffe2f2dcfc2b420b5e50f2151baec0004d7e8122df3
+
+
+
+
+
+
+
+1、openssl genrsa 生成秘钥对,包括公钥和私钥  
+   openssl genrsa -out sercer.key  1024 
+   根据私钥生成证书申请文件csr
+   openssl req -new -key server.key -out server.csr
+   使用私钥对证书申请进行签名从而生成证书
+   openssl x509 -req -in server.csr -out server.crt -signkey server.key -days 3650
+
+   查看csr文件
+   openssl req -noout -text -in myserver.csr
+   
+   从csr文件中提取公钥
+   openssl req -in csr.txt -noout -pubkey
+   openssl req -in csr.txt -noout -pubkey -out  publickey.pem
+   
+   一个 CSR 主要是由一个密钥对的公钥和一些附加信息组成
+   CSR 可以用来向证书颁发机构请求 SSL 证书
+   
+   A、从现有的私钥中生成一个 CSR
+   B、从现有的证书和私钥生成 CSR
+   
+
+2、openssl rsa -pubout -out 可以提取公钥
+   openssl rsa -in sercer.key -pubout -out sercer_pub.key
+   
+3、用公钥加解密文件
+openssl rsautl -encrypt -in hello.txt -inkey test_pub.key -pubin -out hello.en
+-in指定要加密的文件，-inkey指定密钥，-pubin表明是用纯公钥文件加密，-out为加密后的文件
+
+解密文件：
+
+openssl rsautl -decrypt -in hello.en -inkey test.key -out hello.de
+
+-in指定被加密的文件，-inkey指定私钥文件，-out为解密后的文件。
+
+4、证书中的指纹计算
+grep -v ^- cert.crt  | base64 -d | sha256sum
+grep -v ^- cert.crt  | base64 -d | sha1sum
+
+openssl x509 -in cert.crt -fingerprint -sha256
+
+指纹是通过摘要算法生成的
+
+通过对证书内容进行摘要算法可以知道是否完整
+
+5、从证书中提取公钥
+openssl x509 -in cert.crt -pubkey -noout > fuchuang.pub
+
+6、openssl查看证书信息 
+打印证书的过期时间
+​​​openssl x509 -in signed.crt -noout -dates​​
+
+打印出证书的内容：
+​​​openssl x509 -in cert.pem -noout -text​​
+
+打印出证书的系列号
+​​​openssl x509 -in cert.pem -noout -serial​​
+
+打印出证书的拥有者名字
+​​​openssl x509 -in cert.pem -noout -subject​​
+
+以RFC2253规定的格式打印出证书的拥有者名字
+​​​openssl x509 -in cert.pem -noout -subject -nameopt RFC2253​​
+
+在⽀持UTF8的终端⼀⾏过打印出证书的拥有者名字
+​​​openssl x509 -in cert.pem -noout -subject -nameopt oneline -nameopt -escmsb​​
+
+打印出证书的MD5特征参数
+​​​openssl x509 -in cert.pem -noout -fingerprint​​
+
+打印出证书的SHA特征参数
+​​​openssl x509 -sha1 -in cert.pem -noout -fingerprint​​
+
+把PEM格式的证书转化成DER格式
+​​​openssl x509 -in cert.pem -inform PEM -out cert.der -outform DER​​
+
+把⼀个证书转化成CSR
+​​​openssl x509 -x509toreq -in cert.pem -out req.pem -signkey key.pem​​
+
+给⼀个CSR进⾏处理，颁发字签名证书，增加CA扩展项
+​​​openssl x509 -req -in careq.pem -extfile openssl.cnf -extensions v3_ca -signkey key.pem -out cacert.pem​​
+
+给⼀个CSR签名，增加⽤户证书扩展项
+​​​openssl x509 -req -in req.pem -extfile openssl.cnf -extensions v3_usr -CA cacert.pem -CAkey key.pem -CAcreateserial​​
+
+查看csr⽂件细节：
+​​​openssl req -in my.csr -noout -text​​
+
+服务器发送了一个SSL证书给客户端，SSL 证书中包含的具体内容有证书的颁发机构、有效期、公钥、证书持有者、签名，通过第三方的校验保证了身份的合法
+
+以浏览器为例说明如下整个的校验过程：
+
+（1）首先浏览器读取证书中的证书所有者、有效期等信息进行一一校验
+
+（2）浏览器开始查找操作系统中已内置的受信任的证书发布机构CA，与服务器发来的证书中的颁发者CA比对，用于校验证书是否为合法机构颁发 
+
+（3）如果找不到，浏览器就会报错，说明服务器发来的证书是不可信任的。
+
+（4）如果找到，那么浏览器就会从操作系统中取出  颁发者CA的公钥，然后对服务器发来的证书里面的签名进行解密
+
+（5）浏览器使用相同的hash算法计算出服务器发来的证书的hash值，将这个计算的hash值与证书中签名做对比
+
+（6）对比结果一致，则证明服务器发来的证书合法，没有被冒充
+
+（7）此时浏览器就可以读取证书中的公钥，用于后续加密了
+
+
+
+SSL结合了这两种加密算法的优点，通过非对称加密来协商对称加密的密钥，握手成功之后便可使用对称加密来做加密通信，对于RSA来说，客户端是用RSA的公钥把预主密钥加密后传给服务器，服务器再用私钥来解密，双方再通过相同的算法来生成会话密钥，之后的应用层数据就可以通过会话密钥来加密通信。
+
+数字证书里包含了公钥、数字签名、摘要算法、指纹、证书有效期等信息
+
+
+
+
+
+
+
+
+
+
+
+
+
+签名和指纹
+验签
+
+openssl s_client -showcerts -connect erp.fuchuang.com:443 </dev/null
+
+
+
+
+指纹采用的是摘要算法，单向加密，主要用于验证信息的真伪和及证书是否被篡改
+
+对证书生成sha256摘要
+openssl dgst -sha256
+SHA256(fuchuang.crt)= bc9b486283a14b614e430152398001f4e3803fb4fdcddd199c7c774aa986eacd
+                      
+
+
+从证书中获取数字签名
+openssl x509 -in fuchuang.crt -noout -text  -certopt ca_default -certopt no_validity -certopt no_serial -certopt no_subject -certopt no_extensions -certopt no_signame
+
+使用CA证书的公钥对签名进行解密
+openssl rsautl -inkey CNCA.pub -pubin -in fuchuangsign.bin
+
+openssl rsautl -verify -inkey CNCA.pub -pubin -in fuchuang.sign -raw -hexdump
+
+
+
+SIGNATURE_HEX=$(openssl x509 -in fuchuang.crt -text -noout -certopt ca_default -certopt no_validity -certopt no_serial -certopt no_subject -certopt no_extensions -certopt no_signame | grep -v 'Signature Algorithm' | tr -d '[:space:]:')
+
+
+SIGNATURE_HEX=$(openssl x509 -in stackexchange.crt -text -noout -certopt ca_default -certopt no_validity -certopt no_serial -certopt no_subject -certopt no_extensions -certopt no_signame | grep -v 'Signature Algorithm' | tr -d '[:space:]:')
+
+echo ${SIGNATURE_HEX} | xxd -r -p > stackexchange-signature.bin
+
+
+
+openssl rsautl -verify -inkey CNCA.pub -in fuchuangsign.bin -pubin > fuchuangsignde.bin
+
+
+openssl asn1parse -inform DER -in fuchuangsignde.bin
+
+
+
+openssl asn1parse -in fuchuang.crt -strparse 4 -out cert-body.bin
+
+
+
+Base64 是将二进制数据转换为 ASCII 的编码方式之一
+
+
